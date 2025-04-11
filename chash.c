@@ -86,6 +86,24 @@ void insert_record(const char *name, uint32_t salary) {
     rwlock_release_writelock(&rwlock); // Release exclusive access
 }
 
+// Search for a record in the hash table (thread-safe via read lock)
+hashRecord *search_record(const char *name) {
+    uint32_t h = oneTimeHash(name);
+    rwlock_acquire_readlock(&rwlock); // Shared access
+
+    hashRecord *curr = head;
+    while (curr) {
+        if (curr->hash == h && strcmp(curr->name, name) == 0) {
+            rwlock_release_readlock(&rwlock);
+            return curr; // Record found
+        }
+        curr = curr->next;
+    }
+
+    rwlock_release_readlock(&rwlock); // Release shared access
+    return NULL; // Record not found
+}
+
 // Thread entry point to execute a command
 void *execute_command(void *arg) {
     int idx = *(int *)arg;
@@ -95,8 +113,19 @@ void *execute_command(void *arg) {
     long long ts = current_timestamp();
 
     if (strcmp(cmd.command, "insert") == 0) {
+<<<<<<< HEAD
         fprintf(output, "%lld,INSERT,%s,%d\n", ts, cmd.name, cmd.salary);
+=======
+        fprintf(output, "%lld: INSERT,%s,%d\n", current_timestamp(), cmd.name, cmd.salary);
+>>>>>>> 419826f6cc1771bb57c285d5061f4f51777d2287
         insert_record(cmd.name, cmd.salary);
+    } else if (strcmp(cmd.command, "search") == 0) {
+        hashRecord *record = search_record(cmd.name);
+        if (record) {
+            fprintf(output, "%lld: SEARCH,%s,%d\n", current_timestamp(), record->name, record->salary);
+        } else {
+            fprintf(output, "%lld: SEARCH NOT FOUND NOT FOUND\n", current_timestamp());
+        }
     }
     else if (strcmp(cmd.command, "delete") == 0) {
         // Log the command execution before attempting deletion
