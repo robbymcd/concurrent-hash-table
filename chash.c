@@ -1,4 +1,4 @@
-// Hayden Sandler
+// Hayden Sandler https://chatgpt.com/share/67f87e5a-99b4-800b-93ba-cc4af50f8aae
 
 #include <stdio.h>
 #include <stdlib.h>
