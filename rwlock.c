@@ -78,21 +78,21 @@ void *writer(void *arg) {
     return NULL;
 }
 
-int main(int argc, char *argv[]) {
-    if (argc != 3) {
-	fprintf(stderr, "usage: rwlock readloops writeloops\n");
-	exit(1);
-    }
-    read_loops = atoi(argv[1]);
-    write_loops = atoi(argv[2]);
+// int main(int argc, char *argv[]) {
+//     if (argc != 3) {
+// 	fprintf(stderr, "usage: rwlock readloops writeloops\n");
+// 	exit(1);
+//     }
+//     read_loops = atoi(argv[1]);
+//     write_loops = atoi(argv[2]);
     
-    rwlock_init(&mutex); 
-    pthread_t c1, c2;
-    Pthread_create(&c1, NULL, reader, NULL);
-    Pthread_create(&c2, NULL, writer, NULL);
-    Pthread_join(c1, NULL);
-    Pthread_join(c2, NULL);
-    printf("all done\n");
-    return 0;
-}
+//     rwlock_init(&mutex); 
+//     pthread_t c1, c2;
+//     Pthread_create(&c1, NULL, reader, NULL);
+//     Pthread_create(&c2, NULL, writer, NULL);
+//     Pthread_join(c1, NULL);
+//     Pthread_join(c2, NULL);
+//     printf("all done\n");
+//     return 0;
+// }
     

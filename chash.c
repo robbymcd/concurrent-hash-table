@@ -11,6 +11,8 @@
 #define MAX_NAME 50
 #define MAX_COMMANDS 100
 
+void delete_record(const char *name);
+
 // Struct representing a record in the hash table
 typedef struct hash_struct {
     uint32_t hash;
@@ -74,7 +76,7 @@ void insert_record(const char *name, uint32_t salary) {
     }
 
     // Otherwise, insert new record at the head of the list
-    hashRecord *newNode = malloc(sizeof(hashRecord));
+    hashRecord *newNode = (hashRecord *)malloc(sizeof(hashRecord));
     newNode->hash = h;
     strncpy(newNode->name, name, MAX_NAME);
     newNode->salary = salary;
@@ -90,12 +92,61 @@ void *execute_command(void *arg) {
     free(arg);  // Free the dynamically allocated thread argument
     Command cmd = commands[idx];
 
+    long long ts = current_timestamp();
+
     if (strcmp(cmd.command, "insert") == 0) {
-        fprintf(output, "%lld,INSERT,%s,%d\n", current_timestamp(), cmd.name, cmd.salary);
+        fprintf(output, "%lld,INSERT,%s,%d\n", ts, cmd.name, cmd.salary);
         insert_record(cmd.name, cmd.salary);
     }
+    else if (strcmp(cmd.command, "delete") == 0) {
+        // Log the command execution before attempting deletion
+        fprintf(output, "%lld,DELETE,%s\n", ts, cmd.name);
+        delete_record(cmd.name);
+    }
+    // Optionally you can add branches for "search" and "print" commands here
 
     return NULL;
+}
+
+
+// Delete a record from the hash table (thread-safe via write lock)
+void delete_record(const char *name) {
+    uint32_t h = oneTimeHash(name);
+
+    // Acquire write lock
+    rwlock_acquire_writelock(&rwlock);
+    fprintf(output, "%lld,WRITE LOCK ACQUIRED for DELETE\n", current_timestamp());
+
+    hashRecord *curr = head;
+    hashRecord *prev = NULL;
+
+    // Search for the node to delete
+    while (curr != NULL) {
+        if (curr->hash == h && strcmp(curr->name, name) == 0) {
+            // Found the record - unlink it
+            if (prev == NULL) {
+                // Deleting the head node
+                head = curr->next;
+            } else {
+                prev->next = curr->next;
+            }
+            free(curr);
+
+            fprintf(output, "%lld,DELETE,%s\n", current_timestamp(), name);
+            fprintf(output, "%lld,WRITE LOCK RELEASED after DELETE\n", current_timestamp());
+
+            rwlock_release_writelock(&rwlock);
+            return;
+        }
+        prev = curr;
+        curr = curr->next;
+    }
+
+    // If record not found, just release the lock and log accordingly
+    fprintf(output, "%lld,DELETE: Record for %s not found\n", current_timestamp(), name);
+    fprintf(output, "%lld,WRITE LOCK RELEASED after DELETE\n", current_timestamp());
+
+    rwlock_release_writelock(&rwlock);
 }
 
 // Reads and parses commands from "commands.txt"
@@ -150,7 +201,7 @@ int main() {
     // Create one thread per command
     pthread_t threads[command_count];
     for (int i = 0; i < command_count; i++) {
-        int *arg = malloc(sizeof(int)); // Allocate index as thread argument
+        int *arg = (int *)malloc(sizeof(int)); // Allocate index as thread argument
         *arg = i;
         pthread_create(&threads[i], NULL, execute_command, arg);
     }
