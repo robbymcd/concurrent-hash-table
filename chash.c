@@ -52,16 +52,22 @@ uint32_t oneTimeHash(const char *key) {
 
 // Returns current timestamp (seconds since epoch)
 long long current_timestamp() {
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    return (long long)ts.tv_sec;
-}
+    struct timeval te;
+    gettimeofday(&te, NULL); // get current time
+    long long microseconds = (te.tv_sec * 1000000) + te.tv_usec; // calculate milliseconds
+    return microseconds;
+  }
+
+int lock_acquisitions = 0;
+int lock_releases = 0;
 
 // Inserts a record into the hash table (thread-safe via write lock)
 void insert_record(const char *name, uint32_t salary) {
     uint32_t h = oneTimeHash(name);
 
     rwlock_acquire_writelock(&rwlock); // Exclusive access
+    lock_acquisitions++;
+    fprintf(output, "%lld: WRITE LOCK ACQUIRED\n", current_timestamp());
 
     // Search if the record already exists
     hashRecord *curr = head;
@@ -70,6 +76,7 @@ void insert_record(const char *name, uint32_t salary) {
             // If record exists, update salary
             curr->salary = salary;
             rwlock_release_writelock(&rwlock);
+            lock_releases++;
             return;
         }
         curr = curr->next;
@@ -83,25 +90,48 @@ void insert_record(const char *name, uint32_t salary) {
     newNode->next = head;
     head = newNode;
 
+    fprintf(output, "%lld: WRITE LOCK RELEASED\n", current_timestamp());
     rwlock_release_writelock(&rwlock); // Release exclusive access
+    lock_releases++;
 }
 
 // Search for a record in the hash table (thread-safe via read lock)
 hashRecord *search_record(const char *name) {
     uint32_t h = oneTimeHash(name);
     rwlock_acquire_readlock(&rwlock); // Shared access
+    lock_acquisitions++;
+    fprintf(output, "%lld: READ LOCK ACQUIRED\n", current_timestamp());
 
     hashRecord *curr = head;
     while (curr) {
         if (curr->hash == h && strcmp(curr->name, name) == 0) {
+            fprintf(output, "%lld: READ LOCK RELEASED\n", current_timestamp());
             rwlock_release_readlock(&rwlock);
+            lock_releases++;
             return curr; // Record found
         }
         curr = curr->next;
     }
 
+    fprintf(output, "%lld: READ LOCK RELEASED\n", current_timestamp());
     rwlock_release_readlock(&rwlock); // Release shared access
+    lock_releases++;
     return NULL; // Record not found
+}
+
+// print the hash table
+void print_hash_table() {
+    rwlock_acquire_readlock(&rwlock); // Shared access
+    lock_acquisitions++;
+    fprintf(output, "%lld: READ LOCK ACQUIRED\n", current_timestamp());
+    hashRecord *curr = head;
+    while (curr) {
+        fprintf(output, "%u,%s,%u\n", curr->hash, curr->name, curr->salary);
+        curr = curr->next;
+    }
+    rwlock_release_readlock(&rwlock); // Release shared access
+    fprintf(output, "%lld: READ LOCK RELEASED\n", current_timestamp());
+    lock_releases++;
 }
 
 // Thread entry point to execute a command
@@ -113,27 +143,24 @@ void *execute_command(void *arg) {
     long long ts = current_timestamp();
 
     if (strcmp(cmd.command, "insert") == 0) {
-<<<<<<< HEAD
-        fprintf(output, "%lld,INSERT,%s,%d\n", ts, cmd.name, cmd.salary);
-=======
-        fprintf(output, "%lld: INSERT,%s,%d\n", current_timestamp(), cmd.name, cmd.salary);
->>>>>>> 419826f6cc1771bb57c285d5061f4f51777d2287
+        uint32_t hash = oneTimeHash(cmd.name);
+        fprintf(output, "%lld: INSERT,%u,%s,%d\n", current_timestamp(), hash, cmd.name, cmd.salary);
         insert_record(cmd.name, cmd.salary);
     } else if (strcmp(cmd.command, "search") == 0) {
         hashRecord *record = search_record(cmd.name);
         if (record) {
-            fprintf(output, "%lld: SEARCH,%s,%d\n", current_timestamp(), record->name, record->salary);
+            fprintf(output, "%lld: SEARCH: %s,%d\n", current_timestamp(), record->name, record->salary);
         } else {
-            fprintf(output, "%lld: SEARCH NOT FOUND NOT FOUND\n", current_timestamp());
+            fprintf(output, "%lld: SEARCH: NOT FOUND NOT FOUND\n", current_timestamp());
         }
+    } else if (strcmp(cmd.command, "delete") == 0) {
+    // Log the command execution before attempting deletion
+    fprintf(output, "%lld: DELETE AWAKENED\n", current_timestamp());
+    fprintf(output, "%lld: DELETE,%s\n", ts, cmd.name);
+    delete_record(cmd.name);
+    } else if (strcmp(cmd.command, "print") == 0) {
+        print_hash_table();
     }
-    else if (strcmp(cmd.command, "delete") == 0) {
-        // Log the command execution before attempting deletion
-        fprintf(output, "%lld,DELETE,%s\n", ts, cmd.name);
-        delete_record(cmd.name);
-    }
-    // Optionally you can add branches for "search" and "print" commands here
-
     return NULL;
 }
 
@@ -144,7 +171,8 @@ void delete_record(const char *name) {
 
     // Acquire write lock
     rwlock_acquire_writelock(&rwlock);
-    fprintf(output, "%lld,WRITE LOCK ACQUIRED for DELETE\n", current_timestamp());
+    lock_acquisitions++;
+    fprintf(output, "%lld: WRITE LOCK ACQUIRED\n", current_timestamp());
 
     hashRecord *curr = head;
     hashRecord *prev = NULL;
@@ -161,10 +189,8 @@ void delete_record(const char *name) {
             }
             free(curr);
 
-            fprintf(output, "%lld,DELETE,%s\n", current_timestamp(), name);
-            fprintf(output, "%lld,WRITE LOCK RELEASED after DELETE\n", current_timestamp());
-
             rwlock_release_writelock(&rwlock);
+            lock_releases++;
             return;
         }
         prev = curr;
@@ -172,10 +198,9 @@ void delete_record(const char *name) {
     }
 
     // If record not found, just release the lock and log accordingly
-    fprintf(output, "%lld,DELETE: Record for %s not found\n", current_timestamp(), name);
-    fprintf(output, "%lld,WRITE LOCK RELEASED after DELETE\n", current_timestamp());
-
+    fprintf(output, "%lld: WRITE LOCK RELEASED\n", current_timestamp());
     rwlock_release_writelock(&rwlock);
+    lock_releases++;
 }
 
 // Reads and parses commands from "commands.txt"
@@ -197,7 +222,13 @@ void parse_commands() {
 
         if (!cmd || !name || !salary_str) continue;
 
-        if (strncmp(cmd, "threads", 7) == 0) continue; // Skip header line if present
+        if (strncmp(cmd, "threads", 7) == 0) {
+            // Parse the number of threads
+            int num_threads = atoi(name);
+            fprintf(output, "Running %d threads\n", num_threads);
+            fprintf(output, "%lld: WAITING ON INSERTS\n", current_timestamp());
+            continue;
+        }
 
         // Store parsed values in command array
         strncpy(commands[command_count].command, cmd, sizeof(commands[command_count].command));
@@ -259,12 +290,14 @@ int main() {
         curr = next;
     }
 
+    fprintf(output, "Finished all threads.\n");
+    fprintf(output, "Number of lock releases: %d\n", lock_releases);
+    fprintf(output, "Number of lock acquisitions: %d\n", lock_acquisitions);
+
     // Print sorted records to output file
     curr = sorted;
-    while (curr) {
-        fprintf(output, "%u,%s,%u\n", curr->hash, curr->name, curr->salary);
-        curr = curr->next;
-    }
+    print_hash_table();
+    //fprintf(output, "%lld: READ LOCK RELEASED\n", current_timestamp());
 
     fclose(output); // Close the output file
     return 0;
