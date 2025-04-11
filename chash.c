@@ -149,7 +149,8 @@ void *execute_command(void *arg) {
     } else if (strcmp(cmd.command, "search") == 0) {
         hashRecord *record = search_record(cmd.name);
         if (record) {
-            fprintf(output, "%lld: SEARCH: %s,%d\n", current_timestamp(), record->name, record->salary);
+            uint32_t hash = oneTimeHash(cmd.name);
+            fprintf(output, "%lld: SEARCH:%u,%s,%d\n", current_timestamp(), hash, record->name, record->salary);
         } else {
             fprintf(output, "%lld: SEARCH: NOT FOUND NOT FOUND\n", current_timestamp());
         }
