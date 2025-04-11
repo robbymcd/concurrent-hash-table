@@ -113,11 +113,7 @@ void *execute_command(void *arg) {
     long long ts = current_timestamp();
 
     if (strcmp(cmd.command, "insert") == 0) {
-<<<<<<< HEAD
         fprintf(output, "%lld,INSERT,%s,%d\n", ts, cmd.name, cmd.salary);
-=======
-        fprintf(output, "%lld: INSERT,%s,%d\n", current_timestamp(), cmd.name, cmd.salary);
->>>>>>> 419826f6cc1771bb57c285d5061f4f51777d2287
         insert_record(cmd.name, cmd.salary);
     } else if (strcmp(cmd.command, "search") == 0) {
         hashRecord *record = search_record(cmd.name);
